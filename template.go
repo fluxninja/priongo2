@@ -15,7 +15,7 @@ type TrackingIndex struct {
 type PriorityDetails struct {
 	Value       float64
 	ClauseIndex int
-	LoopStack   map[int]int
+	LoopMap     map[int]int
 }
 
 type Chunk struct {
@@ -81,17 +81,22 @@ func (cw *chunkWriter) SetChunkContext(ctx *ExecutionContext, nodeStateful INode
 
 	loopPositions := make(map[int]int)
 	for forLoop := ctx.Private["forloop"]; forLoop != nil; forLoop = forLoop.(*tagForLoopInformation).Parentloop {
-		loopPositions[forLoop.(*tagForLoopInformation).LoopIndex] = forLoop.(*tagForLoopInformation).Counter0
+		typedForLoop, ok := forLoop.(*tagForLoopInformation)
+		if !ok || typedForLoop == nil {
+			break
+		}
+		loopPositions[typedForLoop.LoopIndex] = typedForLoop.Counter0
 	}
 
 	for _, p := range priorityStack {
 		pd := &PriorityDetails{
 			Value:       p.Value,
 			ClauseIndex: p.ClauseIndex,
+			LoopMap:     make(map[int]int),
 		}
 		for _, l := range p.LoopStack {
 			if pos, ok := loopPositions[l]; ok {
-				pd.LoopStack[l] = pos
+				pd.LoopMap[l] = pos
 			} else {
 				// return error
 				return &Error{

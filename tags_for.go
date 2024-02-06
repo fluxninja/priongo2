@@ -68,7 +68,7 @@ func (node *tagForNode) Execute(ctx *ExecutionContext, writer TemplateWriter) (f
 		loopInfo.Revcounter = count - idx        // TODO: Not sure about this, have to look it up
 		loopInfo.Revcounter0 = count - (idx + 1) // TODO: Not sure about this, have to look it up
 
-		if value.val.Type() == reflect.TypeOf(StringTrackable("")) {
+		if key.val.Type() == reflect.TypeOf(StringTrackable("")) {
 			writer.SetTrackingIndex(idx)
 		}
 		// Render elements with updated context
@@ -77,7 +77,7 @@ func (node *tagForNode) Execute(ctx *ExecutionContext, writer TemplateWriter) (f
 			forError = err
 			return false
 		}
-		if value.val.Type() == reflect.TypeOf(StringTrackable("")) {
+		if key.val.Type() == reflect.TypeOf(StringTrackable("")) {
 			writer.UnsetTrackingIndex()
 		}
 		return true
