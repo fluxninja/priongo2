@@ -34,7 +34,12 @@ type Parser struct {
 
 	// if the parser parses a template document, here will be
 	// a reference to it (needed to access the template through Tags)
-	template *Template
+	template              *Template
+	priorityStack         []PriorityEvaluator
+	priorityClauseCounter int
+
+	forLoopCounter int
+	forLoopStack   []int
 }
 
 // Creates a new parser to parse tokens.
@@ -312,4 +317,37 @@ func (p *Parser) SkipUntilTag(names ...string) *Error {
 	}
 
 	return p.Error(fmt.Sprintf("Unexpected EOF, expected tag %s.", strings.Join(names, " or ")), p.lastToken)
+}
+
+func (p *Parser) PushPriority(priorityEvaluator PriorityEvaluator) {
+	defer func() {
+		p.priorityClauseCounter++
+	}()
+	priorityEvaluator.SetClauseIndex(p.priorityClauseCounter)
+	priorityEvaluator.SetLoopStack(p.LoopStack())
+	p.priorityStack = append(p.priorityStack, priorityEvaluator)
+}
+
+func (p *Parser) PopPriority() {
+	p.priorityStack = p.priorityStack[:len(p.priorityStack)-1]
+}
+
+func (p *Parser) PriorityStack() []PriorityEvaluator {
+	return p.priorityStack
+}
+
+func (p *Parser) PushLoop() int {
+	defer func() {
+		p.forLoopCounter++
+	}()
+	p.forLoopStack = append(p.forLoopStack, p.forLoopCounter)
+	return p.forLoopCounter
+}
+
+func (p *Parser) PopLoop() {
+	p.forLoopStack = p.forLoopStack[:len(p.forLoopStack)-1]
+}
+
+func (p *Parser) LoopStack() []int {
+	return p.forLoopStack
 }

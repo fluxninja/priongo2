@@ -72,7 +72,7 @@ func (node *tagMacroNode) call(ctx *ExecutionContext, args ...*Value) (*Value, e
 	}
 
 	var b bytes.Buffer
-	err := node.wrapper.Execute(macroCtx, &b)
+	err := node.wrapper.Execute(macroCtx, &templateWriterBuffer{b: &b})
 	if err != nil {
 		return AsSafeValue(""), err.updateFromTokenIfNeeded(ctx.template, node.position)
 	}

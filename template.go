@@ -7,21 +7,126 @@ import (
 	"strings"
 )
 
+type TrackingIndex struct {
+	Index int
+	Set   bool
+}
+
+type PriorityDetails struct {
+	Value       float64
+	ClauseIndex int
+	LoopStack   map[int]int
+}
+
+type Chunk struct {
+	Value         string
+	Priorities    []PriorityDetails
+	TrackingIndex TrackingIndex
+}
+
+type Chunks []Chunk
+
 type TemplateWriter interface {
 	io.Writer
 	WriteString(string) (int, error)
+	SetChunkContext(*ExecutionContext, INodeStateful) *Error
+	SetTrackingIndex(int)
+	UnsetTrackingIndex()
+	Chunks() Chunks
 }
 
-type templateWriter struct {
+type templateWriterIO struct {
 	w io.Writer
+	chunkWriter
 }
 
-func (tw *templateWriter) WriteString(s string) (int, error) {
+func (tw *templateWriterIO) WriteString(s string) (int, error) {
+	tw.WriteChunk(s)
+
 	return tw.w.Write([]byte(s))
 }
 
-func (tw *templateWriter) Write(b []byte) (int, error) {
+func (tw *templateWriterIO) Write(b []byte) (int, error) {
 	return tw.w.Write(b)
+}
+
+type templateWriterBuffer struct {
+	b *bytes.Buffer
+	chunkWriter
+}
+
+func (tw *templateWriterBuffer) WriteString(s string) (int, error) {
+	tw.WriteChunk(s)
+
+	return tw.b.WriteString(s)
+}
+
+func (tw *templateWriterBuffer) Write(b []byte) (int, error) {
+	return tw.b.Write(b)
+}
+
+type chunkWriter struct {
+	chunks        Chunks
+	priorities    []PriorityDetails
+	trackingIndex TrackingIndex
+}
+
+func (cw *chunkWriter) SetChunkContext(ctx *ExecutionContext, nodeStateful INodeStateful) *Error {
+	cw.priorities = nil
+
+	priorityStack, err := nodeStateful.PriorityStack()
+	if err != nil {
+		return err
+	}
+
+	loopPositions := make(map[int]int)
+	for forLoop := ctx.Private["forloop"]; forLoop != nil; forLoop = forLoop.(*tagForLoopInformation).Parentloop {
+		loopPositions[forLoop.(*tagForLoopInformation).LoopIndex] = forLoop.(*tagForLoopInformation).Counter0
+	}
+
+	for _, p := range priorityStack {
+		pd := &PriorityDetails{
+			Value:       p.Value,
+			ClauseIndex: p.ClauseIndex,
+		}
+		for _, l := range p.LoopStack {
+			if pos, ok := loopPositions[l]; ok {
+				pd.LoopStack[l] = pos
+			} else {
+				// return error
+				return &Error{
+					Sender:    "SetChunkContext",
+					OrigError: fmt.Errorf("Loop iteration position not found for loop index %d", l),
+				}
+			}
+		}
+		cw.priorities = append(cw.priorities, *pd)
+	}
+
+	return nil
+}
+
+func (cw *chunkWriter) SetTrackingIndex(i int) {
+	cw.trackingIndex.Index = i
+	cw.trackingIndex.Set = true
+}
+
+func (cw *chunkWriter) UnsetTrackingIndex() {
+	cw.trackingIndex.Set = false
+}
+
+func (cw *chunkWriter) Chunks() Chunks {
+	return cw.chunks
+}
+
+func (cw *chunkWriter) WriteChunk(s string) {
+	cw.chunks = append(cw.chunks,
+		Chunk{
+			Value:         s,
+			Priorities:    cw.priorities,
+			TrackingIndex: cw.trackingIndex,
+		},
+	)
 }
 
 type Template struct {
@@ -178,24 +283,25 @@ func (tpl *Template) execute(context Context, writer TemplateWriter) error {
 }
 
 func (tpl *Template) newTemplateWriterAndExecute(context Context, writer io.Writer) error {
-	return tpl.execute(context, &templateWriter{w: writer})
+	return tpl.execute(context, &templateWriterIO{w: writer})
 }
 
-func (tpl *Template) newBufferAndExecute(context Context) (*bytes.Buffer, error) {
+func (tpl *Template) newBufferAndExecute(context Context) (*bytes.Buffer, Chunks, error) {
 	// Create output buffer
 	// We assume that the rendered template will be 30% larger
 	buffer := bytes.NewBuffer(make([]byte, 0, int(float64(tpl.size)*1.3)))
-	if err := tpl.execute(context, buffer); err != nil {
-		return nil, err
+	twb := &templateWriterBuffer{b: buffer}
+	if err := tpl.execute(context, twb); err != nil {
+		return nil, nil, err
 	}
-	return buffer, nil
+	return buffer, twb.Chunks(), nil
 }
 
 // Executes the template with the given context and writes to writer (io.Writer)
 // on success. Context can be nil. Nothing is written on error; instead the error
 // is being returned.
 func (tpl *Template) ExecuteWriter(context Context, writer io.Writer) error {
-	buf, err := tpl.newBufferAndExecute(context)
+	buf, _, err := tpl.newBufferAndExecute(context)
 	if err != nil {
 		return err
 	}
@@ -218,17 +324,28 @@ func (tpl *Template) ExecuteWriterUnbuffered(context Context, writer io.Writer) 
 // Executes the template and returns the rendered template as a []byte
 func (tpl *Template) ExecuteBytes(context Context) ([]byte, error) {
 	// Execute template
-	buffer, err := tpl.newBufferAndExecute(context)
+	buffer, _, err := tpl.newBufferAndExecute(context)
 	if err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
 }
 
+// Executes the template and returns the rendered template as a WriteChunks
+func (tpl *Template) ExecuteChunks(context Context) (Chunks, error) {
+	// Execute template
+	_, chunks, err := tpl.newBufferAndExecute(context)
+	if err != nil {
+		return nil, err
+	}
+
+	return chunks, nil
+}
+
 // Executes the template and returns the rendered template as a string
 func (tpl *Template) Execute(context Context) (string, error) {
 	// Execute template
-	buffer, err := tpl.newBufferAndExecute(context)
+	buffer, _, err := tpl.newBufferAndExecute(context)
 	if err != nil {
 		return "", err
 	}
@@ -272,7 +389,7 @@ func (tpl *Template) ExecuteBlocks(context Context, blocks []string) (map[string
 						return nil, err
 					}
 				}
-				bErr := blockWrapper.Execute(ctx, buffer)
+				bErr := blockWrapper.Execute(ctx, &templateWriterBuffer{b: buffer})
 				if bErr != nil {
 					return nil, bErr
 				}

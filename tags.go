@@ -83,7 +83,7 @@ func ReplaceTag(name string, parserFn TagParser) error {
 }
 
 // Tag = "{%" IDENT ARGS "%}"
-func (p *Parser) parseTagElement() (INodeTag, *Error) {
+func (p *Parser) parseTagElement() (INodeStateful, *Error) {
 	p.Consume() // consume "{%"
 	tokenName := p.MatchType(TokenIdentifier)
 
@@ -125,6 +125,11 @@ func (p *Parser) parseTagElement() (INodeTag, *Error) {
 	}
 
 	p.template.level++
-	defer func() { p.template.level-- }()
-	return tag.parser(p, tokenName, argParser)
+	defer func() {
+		p.template.level--
+	}()
+	iNodeTag, err := tag.parser(p, tokenName, argParser)
+	nStateful := &nodeStateful{INode: iNodeTag}
+	nStateful.CopyState(p)
+	return nStateful, err
 }

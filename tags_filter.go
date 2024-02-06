@@ -18,7 +18,7 @@ type tagFilterNode struct {
 func (node *tagFilterNode) Execute(ctx *ExecutionContext, writer TemplateWriter) *Error {
 	temp := bytes.NewBuffer(make([]byte, 0, 1024)) // 1 KiB size
 
-	err := node.bodyWrapper.Execute(ctx, temp)
+	err := node.bodyWrapper.Execute(ctx, &templateWriterBuffer{b: temp})
 	if err != nil {
 		return err
 	}

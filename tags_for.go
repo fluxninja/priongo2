@@ -1,5 +1,7 @@
 package pongo2
 
+import "reflect"
+
 type tagForNode struct {
 	key             string
 	value           string // only for maps: for key, value in map
@@ -9,6 +11,7 @@ type tagForNode struct {
 
 	bodyWrapper  *NodeWrapper
 	emptyWrapper *NodeWrapper
+	loopIndex    int
 }
 
 type tagForLoopInformation struct {
@@ -19,6 +22,7 @@ type tagForLoopInformation struct {
 	First       bool
 	Last        bool
 	Parentloop  *tagForLoopInformation
+	LoopIndex   int
 }
 
 func (node *tagForNode) Execute(ctx *ExecutionContext, writer TemplateWriter) (forError *Error) {
@@ -28,7 +32,8 @@ func (node *tagForNode) Execute(ctx *ExecutionContext, writer TemplateWriter) (f
 
 	// Create loop struct
 	loopInfo := &tagForLoopInformation{
-		First: true,
+		First:     true,
+		LoopIndex: node.loopIndex,
 	}
 
 	// Is it a loop in a loop?
@@ -63,11 +68,17 @@ func (node *tagForNode) Execute(ctx *ExecutionContext, writer TemplateWriter) (f
 		loopInfo.Revcounter = count - idx        // TODO: Not sure about this, have to look it up
 		loopInfo.Revcounter0 = count - (idx + 1) // TODO: Not sure about this, have to look it up
 
+		if value.val.Type() == reflect.TypeOf(StringTrackable("")) {
+			writer.SetTrackingIndex(idx)
+		}
 		// Render elements with updated context
 		err := node.bodyWrapper.Execute(forCtx, writer)
 		if err != nil {
 			forError = err
 			return false
+		}
+		if value.val.Type() == reflect.TypeOf(StringTrackable("")) {
+			writer.UnsetTrackingIndex()
 		}
 		return true
 	}, func() {
@@ -127,6 +138,8 @@ func tagForParser(doc *Parser, start *Token, arguments *Parser) (INodeTag, *Erro
 		return nil, arguments.Error("Malformed for-loop arguments.", nil)
 	}
 
+	forNode.loopIndex = doc.PushLoop()
+
 	// Body wrapping
 	wrapper, endargs, err := doc.WrapUntilTag("empty", "endfor")
 	if err != nil {
@@ -150,6 +163,8 @@ func tagForParser(doc *Parser, start *Token, arguments *Parser) (INodeTag, *Erro
 			return nil, endargs.Error("Arguments not allowed here.", nil)
 		}
 	}
+
+	doc.PopLoop()
 
 	return forNode, nil
 }

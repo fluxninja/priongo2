@@ -1,7 +1,7 @@
 package pongo2
 
 // Doc = { ( Filter | Tag | HTML ) }
-func (p *Parser) parseDocElement() (INode, *Error) {
+func (p *Parser) parseDocElement() (INodeStateful, *Error) {
 	t := p.Current()
 
 	switch t.Typ {
@@ -12,7 +12,9 @@ func (p *Parser) parseDocElement() (INode, *Error) {
 		n.trimLeft = left != nil && left.TrimWhitespaces
 		n.trimRight = right != nil && right.TrimWhitespaces
 		p.Consume() // consume HTML element
-		return n, nil
+		nStateful := &nodeStateful{INode: n}
+		nStateful.CopyState(p)
+		return nStateful, nil
 	case TokenSymbol:
 		switch t.Val {
 		case "{{":

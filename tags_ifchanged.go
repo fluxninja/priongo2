@@ -17,7 +17,7 @@ func (node *tagIfchangedNode) Execute(ctx *ExecutionContext, writer TemplateWrit
 		// Check against own rendered body
 
 		buf := bytes.NewBuffer(make([]byte, 0, 1024)) // 1 KiB
-		err := node.thenWrapper.Execute(ctx, buf)
+		err := node.thenWrapper.Execute(ctx, &templateWriterBuffer{b: buf})
 		if err != nil {
 			return err
 		}

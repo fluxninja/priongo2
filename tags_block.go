@@ -71,7 +71,7 @@ func (t tagBlockInformation) Super() (*Value, error) {
 
 	blockWrapper := t.wrappers[lenWrappers-1]
 	buf := bytes.NewBufferString("")
-	err := blockWrapper.Execute(superCtx, &templateWriter{buf})
+	err := blockWrapper.Execute(superCtx, &templateWriterBuffer{b: buf})
 	if err != nil {
 		return AsSafeValue(""), err
 	}

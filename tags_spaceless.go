@@ -14,7 +14,7 @@ var tagSpacelessRegexp = regexp.MustCompile(`(?U:(<.*>))([\t\n\v\f\r ]+)(?U:(<.*
 func (node *tagSpacelessNode) Execute(ctx *ExecutionContext, writer TemplateWriter) *Error {
 	b := bytes.NewBuffer(make([]byte, 0, 1024)) // 1 KiB
 
-	err := node.wrapper.Execute(ctx, b)
+	err := node.wrapper.Execute(ctx, &templateWriterBuffer{b: b})
 	if err != nil {
 		return err
 	}

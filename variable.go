@@ -820,7 +820,7 @@ filterLoop:
 	return v, nil
 }
 
-func (p *Parser) parseVariableElement() (INode, *Error) {
+func (p *Parser) parseVariableElement() (INodeStateful, *Error) {
 	node := &nodeVariable{
 		locationToken: p.Current(),
 	}
@@ -837,5 +837,8 @@ func (p *Parser) parseVariableElement() (INode, *Error) {
 		return nil, p.Error("'}}' expected", nil)
 	}
 
-	return node, nil
+	nStateful := &nodeStateful{INode: node}
+	nStateful.CopyState(p)
+
+	return nStateful, nil
 }
